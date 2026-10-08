@@ -1,6 +1,6 @@
 # 动画导入器
 
-独立的本地素材导入和矫正网页。双击 start.cmd，打开终端中的地址（默认 http://127.0.0.1:5174）。启动脚本可复用相邻制谱器已有的 Vite；独立安装时运行 npm install，随后 npm run dev。
+本地素材导入和矫正网页，已嵌入渲染器的“素材”窗口，也可独立运行。独立使用时双击 start.cmd，打开终端中的地址（默认 http://127.0.0.1:5174）。启动脚本可复用相邻制谱器已有的 Vite；独立安装时运行 npm install，随后 npm run dev。使用渲染器时无需另外启动 5174 服务。
 
 ## 使用
 
@@ -11,12 +11,16 @@
 5. 可逐帧或按设定帧率播放；攻击组可叠加待机首帧检查对齐。怪物逐张编辑，明确点击“应用到全部怪物”才批量赋值。
 6. “应用”提交到内存；“取消”恢复上次应用状态。“保存配置”下载当前窗口内容（包括尚未应用的修改）。下次打开 JSON 后重新关联原素材文件夹。配置不包含图片，不修改 PNG。应用不等于持久保存，关闭前请下载配置。
 
-当前是独立导入器，尚未接入渲染器。应用时发出 animation-assets-applied 浏览器事件，载荷与配置文件相同。后续渲染器应复用源坐标变换：裁剪源图，再相对锚点缩放、旋转；裁剪后锚点坐标为原锚点减去裁剪左上角。人物目标坐标不因裁剪发生变化。
+渲染器通过同源 editor.html 复用此导入器源码。“应用”发出 animation-assets-applied 事件，更新主预览；“取消”恢复上次应用状态，不会关闭窗口。两处使用相同的源坐标变换：按原图裁剪框限制可见区域，再围绕锚点缩放、旋转，人物目标坐标不因裁剪变化。
+
+素材窗口导出的配置只包含 version、fps 和 slots；渲染器主页面导出的配置包含 version、settings 和 assets。前者在素材窗口打开，后者在渲染器主页面打开。主页面仅保存已应用的素材配置，关闭前先应用修改，再保存渲染配置。重新关联原素材时按原文件名导入，避免用“载入项目素材”重置已有矫正。
 
 配置 version 为 1，slots 顺序固定为待机、上打、下劈、平砍、命中特效、怪物。每个动画组一套 transforms，怪物每张一套。crop 和 anchor 采用原始 PNG 像素坐标，scale 为倍数，rotation 为角度。fps 独立于渲染网页刷新率。
 
 ## 验证
 
-npm test 验证排序、配置校验和坐标不变性。npm run build 构建。node tests/browser.mjs 在本地 5174 服务上运行浏览器验证（需要 Playwright 和 Chrome；脚本支持当前 Codex 自带 Playwright）。
+npm test 验证排序、配置校验和坐标不变性。独立安装依赖后用 npm run build 构建；仅复用相邻制谱器依赖时，在本目录运行 node ../chart-editor/node_modules/vite/bin/vite.js build。node tests/browser.mjs 在本地 5174 服务上运行浏览器验证（需要 Playwright 和 Chrome；脚本支持当前 Codex 自带 Playwright）。
 
 已测试现有 Idle、Upper、Monsters PNG，验证自然排序、裁剪与变换、播放、应用/取消、配置重载重新关联和错误输入保护。界面检查覆盖 1440×1000 与 1100×800。
+
+相关文档：[渲染器说明](../renderer/README.md)、[当前实现与后续计划](../../docs/MVP_IMPLEMENTATION_PLAN.md)。
