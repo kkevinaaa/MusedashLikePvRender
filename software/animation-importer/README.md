@@ -13,7 +13,7 @@
 
 渲染器通过同源 editor.html 复用此导入器源码。“应用”发出 animation-assets-applied 事件，更新主预览；“取消”恢复上次应用状态，不会关闭窗口。两处使用相同的源坐标变换：按原图裁剪框限制可见区域，再围绕锚点缩放、旋转，人物目标坐标不因裁剪变化。
 
-素材窗口导出的配置包含 version、fps 和 slots（含原始 PNG 数据与可获得的相对路径）；渲染器主页面导出的配置包含 version、settings 和 assets。前者在素材窗口打开，后者在渲染器主页面打开。主页面仅保存已应用的素材配置，关闭前先应用修改，再保存渲染配置。重新关联原素材时按原文件名导入，避免用“载入项目素材”重置已有矫正。
+素材窗口导出的配置包含 version、mode、fps 和 slots（含原始 PNG 数据与可获得的相对路径）；渲染器主页面导出的配置包含 version、settings、modeSettings、assets、chart 和 music。前者在素材窗口打开，后者在渲染器主页面打开。主页面“保存工程”包含当前素材、音乐和谱面，并应用素材窗口修改。网页不内置项目素材。
 
 配置 version 为 2，slots 顺序固定为待机、上打、下劈、平砍、命中特效、怪物、人物立绘；mode 为 hit 或 miss。每个动画组一套 transforms，怪物每张一套。crop 和 anchor 采用原始 PNG 像素坐标，scale 为倍数，rotation 为角度。fps 独立于渲染网页刷新率。
 
