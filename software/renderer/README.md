@@ -45,3 +45,5 @@
 engine.js 为确定性状态计算，clock.js 为音频时钟，mp4.js 负责离线视频音频编码，zip.js 写入 PNG 分卷。MP4 使用本地浏览器编码及 [Mediabunny](https://mediabunny.dev/guide/writing-media-files) 封装，不上传素材。
 
 npm run build 构建主页面和素材窗口；npm test 验证引擎。node tests/browser.mjs 使用实际 PNG/FLAC 检查交互、PNG ZIP，以及两种 MP4 的轨道、帧率、时长和实际解码。测试使用 Chrome 与 Codex 随附 Playwright。
+
+打击特效可开启线性淡出，设置淡出时长和相对每次特效播放起点的延后时间。淡出结束后隐藏；“播完后停留末帧”默认开启：素材先播完时保持最后一帧至淡出结束；关闭则在素材播完时消失，即使淡出尚未完成。关闭时保持原有播放时长。预览、MP4、PNG 共用透明度计算，全局抽帧时透明度也按抽帧率更新；退场及导出收尾会等待特效结束。参数随渲染配置保存。

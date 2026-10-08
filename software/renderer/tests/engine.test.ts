@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {defaults,compile,actorAt,monsterAt,hash,hitConflicts,validateSettings,transitionTimes,actorXAt,compositionRange,monsterDrift,sampledTime,logicalWidth,gridOrigin} from '../src/engine.js';
+import {defaults,compile,actorAt,monsterAt,hash,hitConflicts,validateSettings,transitionTimes,actorXAt,compositionRange,monsterDrift,sampledTime,logicalWidth,gridOrigin,effectAt,effectDuration} from '../src/engine.js';
 import {freshChart,parseChart,serializeChart} from '../../chart-editor/src/core.ts';
 const make=()=>({...freshChart(),notes:[{id:'a',tick:960,height:.2},{id:'b',tick:1056,height:.8},{id:'c',tick:2880,height:.5}]});
 const counts=[4,5,5,5,3];
@@ -22,3 +22,7 @@ test('global sampling holds all motion on shared frame lattice',()=>{const p={..
 test('resolution changes preserve height-relative composition',()=>{assert.equal(logicalWidth({...defaults,outputWidth:3840,outputHeight:2160}),1920);assert.equal(logicalWidth({...defaults,outputWidth:1080,outputHeight:1080}),1080);assert.throws(()=>validateSettings({...defaults,outputWidth:1}));assert.throws(()=>validateSettings({...defaults,outputHeight:1080.5}));});
 
 test('sampling FPS is independent of animation duration and validated',()=>{const p={...defaults,exportMode:'stepped',stepFps:7};const e=compile(make(),p,counts,12);assert.ok(Math.abs(e[0].attackEnd-e[0].attack-counts[e[0].action]/12)<1e-9);assert.equal(validateSettings({...p,stepFps:25}).stepFps,25);for(const stepFps of [0,121,NaN])assert.throws(()=>validateSettings({...p,stepFps}));});
+
+test('effect fade delays, fades linearly and holds final frame until completion',()=>{const p={...defaults,fxFade:true,fxFadeDelay:.5,fxFadeDuration:1};assert.deepEqual(effectAt(.4,p,3,12),{frame:2,alpha:1});assert.deepEqual(effectAt(1,p,3,12),{frame:2,alpha:.5});assert.equal(effectAt(1.5,p,3,12),null);assert.equal(effectAt(-.1,p,3,12),null);assert.equal(effectDuration(defaults,3,12),.25);assert.equal(effectAt(.25,defaults,3,12),null);const early={...p,fxFadeDelay:0,fxFadeDuration:.1};assert.equal(effectAt(.1,early,3,12),null);const e=compile(make(),p,counts,12),t=transitionTimes(e,p,counts,12);assert.ok(t.leaveStart>=e.at(-1).time+1.5);assert.equal(validateSettings({}).fxFade,false);assert.throws(()=>validateSettings({...p,fxFadeDuration:0}));assert.throws(()=>validateSettings({...p,fxFadeDelay:-1}));assert.throws(()=>validateSettings({...p,fxFade:'yes'}));});
+
+test('effect can end with source frames without holding, including exit timing',()=>{const p={...defaults,fxFade:true,fxHoldLast:false,fxFadeDelay:.5,fxFadeDuration:1};assert.equal(effectDuration(p,3,12),.25);assert.equal(effectAt(.25,p,3,12),null);assert.deepEqual(effectAt(.2,p,3,12),{frame:2,alpha:1});assert.equal(effectDuration({...p,fxFadeDelay:0,fxFadeDuration:.1},3,12),.1);const e=compile(make(),p,counts,12);assert.equal(transitionTimes(e,p,counts,12).leaveStart,transitionTimes(e,{...p,fxFade:false},counts,12).leaveStart);});
