@@ -1,0 +1,22 @@
+# Dependencies and package-manager caches
+**/node_modules/
+**/.npm-cache/
+
+# Generated build and test output
+**/dist/
+**/build/
+**/test-results/
+**/coverage/
+
+# Project-local temporary files
+/tmp/
+
+# Python caches
+**/__pycache__/
+*.py[cod]
+
+# Logs and common operating-system files
+*.log
+Thumbs.db
+.DS_Store
+/src/

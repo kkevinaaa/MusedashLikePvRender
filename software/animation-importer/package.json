@@ -1,0 +1,1 @@
+{"name":"pv-animation-importer","version":"0.1.0","private":true,"type":"module","scripts":{"dev":"vite --host 127.0.0.1 --port 5174","build":"vite build","test":"node --test tests/core.test.mjs"},"devDependencies":{"vite":"^7.1.0"}}
