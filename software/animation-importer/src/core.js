@@ -8,6 +8,7 @@ export function parseConfig(text){
  const num=(n,min,max)=>typeof n==='number'&&Number.isFinite(n)&&n>=min&&n<=max;
  for(const [i,s] of c.slots.entries()){
   if(!s||!Array.isArray(s.files)||s.files.length>200||!s.files.every(f=>typeof f==='string'&&f.length>0)||new Set(s.files).size!==s.files.length)throw Error('素材列表无效');
+  if(s.images!==undefined&&(!Array.isArray(s.images)||s.images.length!==s.files.length||s.images.some(v=>!v||typeof v.data!=='string'||!/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(v.data)||(v.path!==undefined&&typeof v.path!=='string'))))throw Error('内嵌图片无效');
   const count=s.files.length?(i===5?s.files.length:1):0;
   if(!Array.isArray(s.transforms)||s.transforms.length!==count)throw Error('变换数量无效');
   for(const t of s.transforms){if(!t||!num(t.scale,.05,5)||!num(t.rotation,-180,180)||!t.anchor||!t.crop||!num(t.anchor.x,-100000,100000)||!num(t.anchor.y,-100000,100000)||!num(t.crop.x,0,100000)||!num(t.crop.y,0,100000)||!num(t.crop.w,1,100000)||!num(t.crop.h,1,100000))throw Error('变换参数无效');}

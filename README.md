@@ -1,4 +1,4 @@
-# MuseDash Like PV
+# MuseDash Like PV Renderer
 
 ## 中文
 
