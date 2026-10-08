@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chartWarnings, freshChart, gridTicks, loopPosition, parseChart, serializeChart, snapHeight, snapTick, tickToSeconds, secondsToTick } from '../src/core.ts';
+import { hitsInWindow, beatLabel, chartWarnings, freshChart, gridTicks, loopPosition, parseChart, serializeChart, snapHeight, snapTick, tickToSeconds, secondsToTick } from '../src/core.ts';
 
 test('offset and BPM map time without changing note ticks', () => {
   const chart = freshChart();
@@ -58,4 +58,16 @@ test('loop clock handles many loops and exact boundaries', () => {
   assert.equal(loopPosition(4, { start: 2, end: 4 }), 2);
   assert.equal(loopPosition(24.5, { start: 2, end: 4 }), 2.5);
   assert.equal(loopPosition(24.5, null), 24.5);
+});
+
+test('beat numbering continues across bars and respects denominator', () => {
+  const chart = freshChart();
+  assert.equal(beatLabel(1920, chart.meta), '5');
+  chart.meta.timeSignature = { numerator: 6, denominator: 8 };
+  assert.equal(beatLabel(1440, chart.meta), '7');
+});
+test('hit scheduling skips past notes, preserves simultaneous hits, and has no boundary duplicates', () => {
+  assert.deepEqual(hitsInWindow([0, 0.1, 0.1, 0.2, 1], 0, 0.2, null), [0, 0.1, 0.1]);
+  assert.deepEqual(hitsInWindow([0, 0.1, 0.2, 1], 0.2, 0.4, null), [0.2]);
+  assert.deepEqual(hitsInWindow([0, 1, 1.5, 2, 3], 1.9, 3.1, { start: 1, end: 2 }), [2, 2.5, 3]);
 });

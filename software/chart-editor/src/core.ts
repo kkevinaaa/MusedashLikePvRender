@@ -38,7 +38,7 @@ export const snapHeight = (height: number, lines: number, enabled: boolean) =>
 export function beatLabel(tick: number, meta: Chart['meta']) {
   if (tick < 0) return '第一拍之前';
   const beats = tick / ticksPerBeat(meta);
-  return `${Math.floor(beats / meta.timeSignature.numerator) + 1}:${Math.floor(beats % meta.timeSignature.numerator) + 1}`;
+  return String(Math.floor(beats) + 1);
 }
 export function formatTime(seconds: number) {
   const abs = Math.abs(seconds);
@@ -103,4 +103,17 @@ export function chartWarnings(chart: Chart, duration?: number) {
 export function loopPosition(raw: number, loop: { start: number; end: number } | null) {
   if (loop && raw >= loop.end) return loop.start + (raw - loop.start) % (loop.end - loop.start);
   return raw;
+}
+
+/** Half-open windows prevent repeated hits between audio scheduling batches. */
+export function hitsInWindow(times: number[], from: number, to: number, loop: { start: number; end: number } | null): number[] {
+  const hits: number[] = [];
+  for (const time of times) {
+    if (!loop) { if (time >= from && time < to) hits.push(time); continue; }
+    if (time < loop.start || time >= loop.end) continue;
+    const length = loop.end - loop.start;
+    const first = Math.max(0, Math.ceil((from - time) / length));
+    for (let cycle = first; time + cycle * length < to; cycle++) hits.push(time + cycle * length);
+  }
+  return hits.sort((a, b) => a - b);
 }

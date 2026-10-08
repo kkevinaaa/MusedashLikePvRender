@@ -29,7 +29,7 @@ function NumberField({ label, value, min, max, step = 1, unit, onCommit }: {
 }
 
 const shortcuts = [
-  ['Q', '在鼠标位置放置音符'], ['右键 / Delete', '删除鼠标悬停的音符'], ['Space', '播放 / 暂停'], ['滚轮', '前后定位编辑时刻'], ['O / P', '减小 / 增大滚轮时间步长'],
+  ['Q', '在鼠标位置放置音符'], ['Delete', '删除框选音符；无选区时删除悬停音符'], ['Ctrl + 拖动', '框选音符'], ['右键 / Esc', '取消框选'], ['Ctrl + 滚轮', '以鼠标位置缩放时间轴'], ['Space', '播放 / 暂停'], ['滚轮', '前后定位编辑时刻'], ['O / P', '减小 / 增大滚轮时间步长'],
   ['V', '联动开关高度辅助线与吸附'], ['T', '开关时间吸附'], ['Ctrl + S', '下载谱面 JSON'], ['Esc', '关闭弹窗 / 退出控件'],
 ];
 interface Dialog { title: string; text: string; confirm: string; action: () => void; offerSave?: boolean }
@@ -47,6 +47,9 @@ export default function App() {
   const [playing, setPlaying] = useState(false);
   const [start, setStart] = useState(0);
   const [scale, setScale] = useState(100);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectionReset, setSelectionReset] = useState(0);
+  const clearSelection = () => { setSelected(new Set()); setSelectionReset(v => v + 1); };
   const [visibleWidth, setVisibleWidth] = useState(900);
   const [divisionIndex, setDivisionIndex] = useState(2);
   const [heightLines, setHeightLines] = useState(7);
@@ -55,6 +58,7 @@ export default function App() {
   const [scrollStepIndex, setScrollStepIndex] = useState(4);
   const [follow, setFollow] = useState(true);
   const [volume, setVolume] = useState(0.7);
+  const [hitEnabled, setHitEnabled] = useState(true);
   const [loopStart, setLoopStart] = useState(0);
   const [loopEnd, setLoopEnd] = useState(4);
   const [loopEnabled, setLoopEnabled] = useState(false);
@@ -89,11 +93,19 @@ export default function App() {
     setPosition(time);
     if (time < start || time > start + viewDuration * 0.92) setStart(clamp(time - viewDuration * 0.2, minStart, maxStart));
   };
+  const zoomWheel = (direction: number, x: number) => {
+    const next = clamp(Math.round(scale * (direction < 0 ? 1.2 : 1 / 1.2) / 5) * 5, 20, 400);
+    const anchor = start + x / scale;
+    setStart(clamp(anchor - x / next, minStart, Math.max(minStart, timelineEnd - visibleWidth / next)));
+    setScale(next);
+  };
   const scroll = (direction: number) => navigate(position + direction * SCROLL_STEPS[scrollStepIndex] * 60 / chart.meta.bpm);
   const togglePlayback = async () => {
     if (busy) return;
     if (!loadedMusic) { tell('请先关联本地音乐，才能试听。', 'warning'); return; }
     if (audio.playing) { pause(); return; }
+    clearSelection();
+    audio.setHitTimes(chart.notes.map(n => tickToSeconds(n.tick, chart.meta)));
     try { await audio.play(); setPlaying(audio.playing); } catch (error) { tell(`无法播放音乐：${error instanceof Error ? error.message : String(error)}`, 'error'); }
   };
   const download = () => {
@@ -106,6 +118,7 @@ export default function App() {
     return true;
   };
   const resetTransport = () => {
+    clearSelection();
     audio.setBuffer(null); setLoadedMusic(null); setWave(null); setPosition(0); setPlaying(false);
     setLoopEnabled(false); setLoopStart(0); setLoopEnd(4); setStart(0);
   };
@@ -124,6 +137,7 @@ export default function App() {
         ++loadingToken.current;
         const reuse = loadedMusic && next.meta.music && loadedMusic.name === next.meta.music.name && Math.abs(loadedMusic.duration - next.meta.music.duration) < 0.05 && loadedMusic.size === next.meta.music.size;
         if (!reuse) resetTransport(); else { audio.seek(0); audio.setLoop(null); setPosition(0); setPlaying(false); setLoopEnabled(false); setLoopStart(0); setLoopEnd(Math.min(4, loadedMusic.duration)); }
+        clearSelection();
         setStart(Math.min(0, next.meta.offsetSeconds)); setChart(next); setSaved(serializeChart(next));
         tell(reuse ? '谱面已载入，继续使用当前音乐。' : '谱面已载入。请关联音乐文件以恢复波形与试听。', 'success');
       });
@@ -215,7 +229,7 @@ export default function App() {
       if (event.isComposing || event.keyCode === 229) return;
       const target = event.target as HTMLElement;
       const editing = !!target.closest('input, textarea, select, [contenteditable="true"]');
-      if (event.key === 'Escape') { setHelp(false); setDialog(null); target.blur(); return; }
+      if (event.key === 'Escape') { clearSelection(); setHelp(false); setDialog(null); target.blur(); return; }
       if (dialog || help) return;
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -231,7 +245,12 @@ export default function App() {
       if (key === ' ' && !target.closest('button')) { event.preventDefault(); void togglePlayback(); }
       if (busy) return;
       if (key === 'q') { event.preventDefault(); placeNote(); }
-      if (key === 'delete' && cursor.current?.inNotes && cursor.current.note) { event.preventDefault(); removeNote(cursor.current.note.id); }
+      if (key === 'delete') {
+        if (selected.size) {
+          event.preventDefault();
+          if (!playing) { setChart(old => ({ ...old, notes: old.notes.filter(n => !selected.has(n.id)) })); clearSelection(); }
+        } else if (cursor.current?.inNotes && cursor.current.note) { event.preventDefault(); removeNote(cursor.current.note.id); }
+      }
       if (key === 'v') setHeightSnap(v => !v);
       if (key === 't') setTimeSnap(v => !v);
       if (key === 'o') setScrollStepIndex(v => Math.max(0, v - 1));
@@ -280,9 +299,9 @@ export default function App() {
       </fieldset>
     </section>
 
-    <div className="workspace-heading"><div><span className="section-number">01</span><strong>谱面编辑</strong><span className="muted">{chart.notes.length} 音符 · 480 PPQ</span></div><div className="heading-controls"><label className="check"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} />跟随播放头</label><span className="muted">BPM 按四分音符计</span></div></div>
+    <div className="workspace-heading"><div><span className="section-number">01</span><strong>谱面编辑</strong><span className="muted">{chart.notes.length} 音符 · 480 PPQ</span><span className="muted" data-testid="selection-count">{selected.size ? `已选 ${selected.size} 个 · Delete 删除 · Esc / 右键取消` : ''}</span></div><div className="heading-controls"><label className="check"><input type="checkbox" checked={follow} onChange={e => setFollow(e.target.checked)} />跟随播放头</label><span className="muted">BPM 按四分音符计</span></div></div>
     <section className="editor-panel" aria-label="制谱区域">
-      <Editor chart={chart} wave={wave} position={position} start={start} pixelsPerSecond={scale} division={division} heightLines={heightLines} heightSnap={heightSnap} timeSnap={timeSnap}
+      <Editor selected={selected} onSelect={setSelected} selectionReset={selectionReset} editable={!playing && !busy} onZoom={zoomWheel} chart={chart} wave={wave} position={position} start={start} pixelsPerSecond={scale} division={division} heightLines={heightLines} heightSnap={heightSnap} timeSnap={timeSnap}
         loop={loopEnabled && loopValid ? { start: loopStart, end: loopEnd } : null} onSeek={navigate} onWheel={scroll} onCursor={c => { cursor.current = c; }} onDelete={removeNote} onWidth={setVisibleWidth} />
       <div className="scrollbar-row"><span>{formatTime(start)}</span><input type="range" aria-label="时间视图滚动" min={minStart} max={maxStart} step={0.001} value={start} onChange={e => setStart(Number(e.target.value))} /><span>{formatTime(start + viewDuration)}</span></div>
       <div className="editor-tools">
@@ -298,13 +317,14 @@ export default function App() {
     </section>
 
     <section className="transport" aria-label="试听控制">
-      <div className="play-controls"><button title="回到音乐开头" aria-label="回到音乐开头" onClick={() => navigate(0)}>↤</button><button className="play-button" onClick={() => void togglePlayback()} disabled={!loadedMusic || busy} aria-label={playing ? '暂停' : '播放'}>{playing ? 'Ⅱ' : '▶'}</button><div className="time-display"><strong data-testid="current-time">{formatTime(position)}</strong><span>小节 {beatLabel(secondsToTick(position, chart.meta), chart.meta)} <kbd>Space</kbd></span></div></div>
+      <div className="play-controls"><button title="回到音乐开头" aria-label="回到音乐开头" onClick={() => navigate(0)}>↤</button><button className="play-button" onClick={() => void togglePlayback()} disabled={!loadedMusic || busy} aria-label={playing ? '暂停' : '播放'}>{playing ? 'Ⅱ' : '▶'}</button><div className="time-display"><strong data-testid="current-time">{formatTime(position)}</strong><span>拍号 {beatLabel(secondsToTick(position, chart.meta), chart.meta)} <kbd>Space</kbd></span></div></div>
       <div className="loop-controls"><button className={`toggle ${loopEnabled ? 'enabled' : ''}`} aria-pressed={loopEnabled} onClick={() => setLoop(!loopEnabled)} disabled={!loadedMusic}>↻ 循环</button>
         <NumberField label="循环 A" value={loopStart} min={0} max={loadedMusic?.duration ?? timelineEnd} step={0.001} unit="s" onCommit={a => setLoop(loopEnabled, a, loopEnd)} />
         <button className="loop-set" title="用当前位置设置 A" aria-label="用当前位置设置循环 A" onClick={() => setLoop(loopEnabled, Number(position.toFixed(3)), loopEnd)}>设 A</button>
         <NumberField label="循环 B" value={loopEnd} min={0} max={loadedMusic?.duration ?? timelineEnd} step={0.001} unit="s" onCommit={b => setLoop(loopEnabled, loopStart, b)} />
         <button className="loop-set" title="用当前位置设置 B" aria-label="用当前位置设置循环 B" onClick={() => setLoop(loopEnabled, loopStart, Number(position.toFixed(3)))}>设 B</button></div>
-      <label className="volume">音量<input aria-label="音量" type="range" min="0" max="1" step="0.01" value={volume} onChange={e => { const v = Number(e.target.value); setVolume(v); audio.setVolume(v); }} /></label>
+      <button className={`toggle ${hitEnabled ? 'enabled' : ''}`} aria-pressed={hitEnabled} onClick={() => { const enabled = !hitEnabled; setHitEnabled(enabled); audio.setHitEnabled(enabled); }}>音符音效 {hitEnabled ? '开' : '关'}</button>
+      <label className="volume">音乐<input aria-label="音量" type="range" min="0" max="1" step="0.01" value={volume} onChange={e => { const v = Number(e.target.value); setVolume(v); audio.setVolume(v); }} /></label>
     </section>
     <footer><div className={`notice ${notice.type}`} role="status">{notice.text}</div><span>滚轮步长 {SCROLL_STEPS[scrollStepIndex]} 四分音符 <kbd>O</kbd><kbd>P</kbd></span></footer>
     {warnings.length > 0 && <div className="warnings" role="status">{warnings.map(w => <span key={w}>△ {w}</span>)}</div>}
@@ -312,7 +332,7 @@ export default function App() {
     {(help || dialog) && <div className="modal-backdrop" onClick={() => { setHelp(false); setDialog(null); }}><section className="modal" role="dialog" aria-modal="true" aria-label={dialog?.title ?? '快捷键与使用说明'} onClick={e => e.stopPropagation()}>
       <button className="modal-close" aria-label="关闭弹窗" onClick={() => { setHelp(false); setDialog(null); }}>×</button>
       {dialog ? <><span className="eyebrow">PROJECT</span><h2>{dialog.title}</h2><p>{dialog.text}</p><div className="modal-actions"><button autoFocus onClick={() => setDialog(null)}>取消</button>{dialog.offerSave && <button onClick={() => { if (download()) { dialog.action(); setDialog(null); } }}>导出后继续</button>}<button className="primary" onClick={() => { dialog.action(); setDialog(null); }}>{dialog.confirm}</button></div></>
-        : <><span className="eyebrow">QUICK REFERENCE</span><h2>先听，再放下一个音符。</h2><p>导入音乐 → 设置 BPM 与 offset → 鼠标移到画布按 Q → 试听 → 导出 JSON。</p><div className="shortcut-list">{shortcuts.map(([key, value]) => <div key={key}><kbd>{key}</kbd><span>{value}</span></div>)}</div><p className="help-note">输入框内不触发字母快捷键。修改位置请删除后重新放置。每拍细分按拍号分母划分，BPM 始终以四分音符计。正 offset 表示第一拍晚于音乐开头。</p><p className="help-note">JSON 只保存谱面与音乐参考信息，不包含音乐。网页没有自动保存，关闭前请导出；导出发起后请确认下载文件已保留。</p><button className="primary" autoFocus onClick={() => setHelp(false)}>开始制谱</button></>}
+        : <><span className="eyebrow">QUICK REFERENCE</span><h2>先听，再放下一个音符。</h2><p>导入音乐 → 设置 BPM 与 offset → 鼠标移到画布按 Q → 试听 → 导出 JSON。</p><div className="shortcut-list">{shortcuts.map(([key, value]) => <div key={key}><kbd>{key}</kbd><span>{value}</span></div>)}</div><p className="help-note">输入框内不触发字母快捷键。修改位置请删除后重新放置。每拍细分按拍号分母划分，BPM 始终以四分音符计。正 offset 表示第一拍晚于音乐开头。标尺逐拍编号，音符音效用于核对命中时间。</p><p className="help-note">JSON 只保存谱面与音乐参考信息，不包含音乐。网页没有自动保存，关闭前请导出；导出发起后请确认下载文件已保留。</p><button className="primary" autoFocus onClick={() => setHelp(false)}>开始制谱</button></>}
     </section></div>}
   </main>;
 }

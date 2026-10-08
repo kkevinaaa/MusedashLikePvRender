@@ -1,4 +1,4 @@
-import { clamp, loopPosition } from './core';
+import { clamp, hitsInWindow, loopPosition } from './core';
 
 /** The only playback clock. RAF reads it; RAF never advances musical time. */
 export class AudioTransport {
@@ -12,12 +12,60 @@ export class AudioTransport {
   private generation = 0;
   private loop: { start: number; end: number } | null = null;
   private volume = 0.7;
+  private hitBuffer: AudioBuffer | null = null;
+  private hitLoading: Promise<void> | null = null;
+  private hitTimes: number[] = [];
+  private hitEnabled = true;
+  private hitGain: GainNode | null = null;
+  private hits = new Set<AudioBufferSourceNode>();
+  private scheduler: ReturnType<typeof setInterval> | null = null;
+  private scheduledUntil = 0;
+  setHitTimes(times: number[]) { this.hitTimes = times.filter(t => t >= 0).sort((a, b) => a - b); }
+  setHitEnabled(enabled: boolean) {
+    this.hitEnabled = enabled;
+    this.clearHits();
+    if (this.context && this.source) {
+      this.scheduledUntil = Math.max(this.anchorTime, this.context.currentTime);
+      this.scheduleHits();
+    }
+  }
+  private async loadHitSound() {
+    if (this.hitBuffer) return;
+    if (!this.hitLoading) this.hitLoading = (async () => {
+      const response = await fetch(new URL('./assets/tap.wav', import.meta.url));
+      if (!response.ok) throw new Error('tap.wav 加载失败');
+      this.hitBuffer = await this.getContext().decodeAudioData(await response.arrayBuffer());
+    })().finally(() => { this.hitLoading = null; });
+    await this.hitLoading;
+  }
+  private clearHits() {
+    for (const hit of this.hits) { hit.onended = null; hit.stop(); hit.disconnect(); }
+    this.hits.clear();
+  }
+  private scheduleHits() {
+    if (!this.context || !this.source || !this.hitBuffer || !this.hitEnabled) return;
+    const from = Math.max(this.scheduledUntil, this.context.currentTime);
+    const until = this.context.currentTime + 0.2;
+    if (until <= from) return;
+    const musicFrom = this.anchorOffset + (from - this.anchorTime);
+    const musicUntil = this.anchorOffset + (until - this.anchorTime);
+    for (const time of hitsInWindow(this.hitTimes.filter(t => t < this.duration), musicFrom, musicUntil, this.loop)) {
+      const hit = this.context.createBufferSource(); hit.buffer = this.hitBuffer;
+      hit.connect(this.hitGain!); this.hits.add(hit);
+      hit.onended = () => { this.hits.delete(hit); hit.disconnect(); };
+      hit.start(this.anchorTime + time - this.anchorOffset);
+    }
+    this.scheduledUntil = until;
+  }
   private getContext() {
     if (!this.context) {
       this.context = new AudioContext();
       this.gain = this.context.createGain();
       this.gain.gain.value = this.volume;
       this.gain.connect(this.context.destination);
+      this.hitGain = this.context.createGain();
+      this.hitGain.gain.value = 0.7;
+      this.hitGain.connect(this.context.destination);
     }
     return this.context;
   }
@@ -32,7 +80,7 @@ export class AudioTransport {
   get playing() { return this.source !== null; }
   get position() {
     if (!this.source || !this.context) return this.stoppedAt;
-    const raw = this.anchorOffset + (this.context.currentTime - this.anchorTime);
+    const raw = this.anchorOffset + Math.max(0, this.context.currentTime - this.anchorTime);
     return clamp(loopPosition(raw, this.loop), 0, this.duration);
   }
   async play() {
@@ -40,24 +88,34 @@ export class AudioTransport {
     const ctx = this.getContext();
     const token = ++this.generation;
     await ctx.resume();
+    await this.loadHitSound();
     if (token !== this.generation || !this.buffer) return;
     if (this.loop && (this.stoppedAt < this.loop.start || this.stoppedAt >= this.loop.end)) this.stoppedAt = this.loop.start;
     if (this.stoppedAt >= this.duration) this.stoppedAt = this.loop?.start ?? 0;
     const src = ctx.createBufferSource(); src.buffer = this.buffer;
     if (this.loop) { src.loop = true; src.loopStart = this.loop.start; src.loopEnd = this.loop.end; }
     src.connect(this.gain!);
-    this.anchorOffset = this.stoppedAt; this.anchorTime = ctx.currentTime;
+    this.anchorOffset = this.stoppedAt; this.anchorTime = ctx.currentTime + 0.025;
     this.source = src;
     src.onended = () => {
       src.disconnect();
-      if (this.source === src) { this.source = null; this.stoppedAt = this.duration; }
+      if (this.source === src) {
+        this.source = null; this.stoppedAt = this.duration;
+        if (this.scheduler) clearInterval(this.scheduler); this.scheduler = null;
+        this.clearHits();
+      }
     };
-    src.start(0, this.stoppedAt);
+    src.start(this.anchorTime, this.stoppedAt);
+    this.scheduledUntil = this.anchorTime;
+    this.scheduleHits();
+    this.scheduler = setInterval(() => this.scheduleHits(), 25);
   }
   pause() {
     ++this.generation;
     this.stoppedAt = this.position;
     const previous = this.source; this.source = null;
+    if (this.scheduler) clearInterval(this.scheduler); this.scheduler = null;
+    this.clearHits();
     if (previous) { previous.onended = null; previous.stop(); previous.disconnect(); }
   }
   seek(seconds: number) { this.pause(); this.stoppedAt = clamp(seconds, 0, this.duration); }

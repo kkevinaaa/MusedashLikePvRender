@@ -12,6 +12,14 @@ const out = path.resolve('test-results');
 await fs.mkdir(out, { recursive: true });
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--autoplay-policy=no-user-gesture-required'] });
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
+await page.addInitScript(() => {
+  window.__audioStarts = [];
+  const original = AudioBufferSourceNode.prototype.start;
+  AudioBufferSourceNode.prototype.start = function(when, offset, duration) {
+    window.__audioStarts.push({ when: when ?? 0, length: this.buffer?.duration, offset: offset ?? 0 });
+    return original.apply(this, arguments);
+  };
+});
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
 page.on('dialog', dialog => dialog.accept());
@@ -37,6 +45,29 @@ try {
   check('Q places three notes', true);
   const first = await exportChart();
   check('notes save as integer ticks and normalized heights', first.notes.every(n => Number.isInteger(n.tick) && n.height >= 0 && n.height <= 1));
+  const dragSelect = async (reverse = false) => {
+    const b = await canvas.boundingBox();
+    const a = { x: b.x + 130, y: b.y + 135 }, z = { x: b.x + 280, y: b.y + b.height - 33 };
+    const from = reverse ? z : a, to = reverse ? a : z;
+    await page.keyboard.down('Control'); await page.mouse.move(from.x, from.y); await page.mouse.down();
+    await page.mouse.move(to.x, to.y, { steps: 8 }); await page.mouse.up(); await page.keyboard.up('Control');
+    await page.getByTestId('selection-count').filter({ hasText: '已选 2 个' }).waitFor();
+  };
+  await dragSelect(); await page.keyboard.press('Escape');
+  check('Escape cancels box selection without deleting', await page.getByTestId('selection-count').textContent() === ''); await count(3);
+  await dragSelect(true); await page.mouse.click((await canvas.boundingBox()).x + 156, (await canvas.boundingBox()).y + 210, { button: 'right' });
+  check('right click cancels reversed box selection without deleting', await page.getByTestId('selection-count').textContent() === ''); await count(3);
+  await dragSelect(); await page.keyboard.press('Delete'); await count(1);
+  const deleted = await exportChart();
+  check('Delete removes only box-selected notes', deleted.notes.length === 1 && deleted.notes[0].id === first.notes[2].id);
+  await uploadJSON(first); await count(3);
+  await point(300, 200); await page.keyboard.down('Control'); await page.mouse.wheel(0, -100); await page.keyboard.up('Control');
+  await page.waitForTimeout(100);
+  check('Ctrl wheel zooms time scale in', Number(await page.getByLabel('时间缩放', { exact: true }).inputValue()) > 100);
+  await page.keyboard.down('Control'); await page.mouse.wheel(0, 100); await page.keyboard.up('Control'); await page.waitForTimeout(100);
+  check('Ctrl wheel zooms back out without changing notes or playhead', Number(await page.getByLabel('时间缩放', { exact: true }).inputValue()) === 100 && await page.getByTestId('current-time').textContent() === '00:00.000');
+  assert.deepEqual((await exportChart()).notes, first.notes);
+
   await point(356, 350); await page.mouse.click((await canvas.boundingBox()).x + 356, (await canvas.boundingBox()).y + 350, { button: 'right' });
   // Snapped height differs from pointer height; delete using exported coordinates.
   if ((await page.getByText('3 音符 · 480 PPQ', { exact: true }).count()) > 0) {
@@ -97,11 +128,21 @@ try {
   const paused = await page.getByTestId('current-time').textContent();
   await page.waitForTimeout(250);
   check('audio clock advances then stays fixed on pause', during !== '00:00.000' && paused === await page.getByTestId('current-time').textContent());
+  // Use one known hit inside a short loop to inspect actual Web Audio scheduling.
+  const audioChart = await exportChart();
+  audioChart.meta.bpm = 120; audioChart.meta.offsetSeconds = 0;
+  audioChart.notes = [{ id: 'hit-test', tick: 1056, height: 0.5 }];
+  await uploadJSON(audioChart);
+  await page.evaluate(() => { window.__audioStarts = []; });
   await field('循环 A', 1); await field('循环 B', 1.3);
   await page.getByRole('button', { name: '↻ 循环', exact: true }).click();
   await page.getByRole('button', { name: '播放', exact: true }).click();
   await page.waitForTimeout(950);
   const loopTime = await page.getByTestId('current-time').textContent();
+  const starts = await page.evaluate(() => window.__audioStarts);
+  const musicStart = starts.find(s => s.length === 6);
+  const tapStarts = starts.filter(s => s.length < 1);
+  check('tap.wav is decoded and scheduled each loop on the music clock', tapStarts.length >= 3 && Math.abs(tapStarts[0].when - musicStart.when - 0.1) < 0.001 && Math.abs(tapStarts[1].when - tapStarts[0].when - 0.3) < 0.001);
   check('short loop stays inside A/B after multiple wraps', Number(loopTime.slice(3)) >= 1 && Number(loopTime.slice(3)) <= 1.3);
   await page.getByRole('button', { name: '暂停', exact: true }).click();
   await field('循环 B', 0.5);
@@ -118,7 +159,7 @@ try {
   await page.getByRole('button', { name: '播放', exact: true }).click();
   await page.locator('[aria-label="Offset 滚轮或拖动微调"]').hover(); await page.mouse.wheel(0, -100);
   await page.getByRole('button', { name: '播放', exact: true }).waitFor();
-  check('offset wheel pauses playback and changes by 1ms', Number(await page.getByRole('spinbutton', { name: 'Offset', exact: true }).inputValue()) === 126);
+  check('offset wheel pauses playback and changes by 1ms', Number(await page.getByRole('spinbutton', { name: 'Offset', exact: true }).inputValue()) === 1);
   await page.getByLabel('导入音乐文件').setInputFiles({ name: 'broken.wav', mimeType: 'audio/wav', buffer: Buffer.from('invalid audio') });
   await page.getByRole('status').filter({ hasText: '音乐加载失败' }).waitFor();
   check('failed audio import preserves loaded music', await page.getByText('test-tone.wav', { exact: true }).count() === 1);
