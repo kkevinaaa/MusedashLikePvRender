@@ -1,0 +1,7 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {naturalSort,defaults,parseConfig,transformPoint} from '../src/core.js';
+test('numbered filenames sort naturally',()=>assert.deepEqual(naturalSort(['Idle_10.png','Idle_2.png','Idle_1.png'].map(name=>({name}))).map(f=>f.name),['Idle_1.png','Idle_2.png','Idle_10.png']));
+test('crop preserves source-coordinate placement',()=>{const t=defaults(1920,1080);t.scale=.6;t.rotation=30;const p=transformPoint(300,500,t);t.crop={x:200,y:300,w:600,h:700};assert.deepEqual(transformPoint(300,500,t),p);});
+test('anchor move compensation preserves image',()=>{const t=defaults(1920,1080);t.rotation=35;t.scale=.8;const p=transformPoint(300,500,t),offset=transformPoint(800,700,t);t.anchor={x:800,y:700};const next=transformPoint(300,500,t);assert.ok(Math.abs(next.x+offset.x-p.x)<1e-9);assert.ok(Math.abs(next.y+offset.y-p.y)<1e-9);});
+test('configuration rejects incompatible transform counts',()=>{const c={version:1,fps:8,slots:Array.from({length:6},()=>({files:[],transforms:[]}))};c.slots[0]={files:['1.png','2.png'],transforms:[defaults(1920,1080)]};assert.deepEqual(parseConfig(JSON.stringify(c)),c);c.slots[0].transforms.push(defaults(1920,1080));assert.throws(()=>parseConfig(JSON.stringify(c)));assert.throws(()=>parseConfig('null'));});

@@ -8,6 +8,7 @@ export interface Chart {
   version: 1;
   meta: {
     title: string;
+    seed?: number;
     bpm: number;
     offsetSeconds: number;
     ppq: 480;
@@ -18,7 +19,7 @@ export interface Chart {
 }
 export const freshChart = (): Chart => ({
   version: 1,
-  meta: { title: '未命名谱面', bpm: 120, offsetSeconds: 0, ppq: PPQ,
+  meta: { title: '未命名谱面', seed: 1, bpm: 120, offsetSeconds: 0, ppq: PPQ,
     timeSignature: { numerator: 4, denominator: 4 }, music: null },
   notes: [],
 });
@@ -81,7 +82,7 @@ export function parseChart(text: string): Chart {
     ids.add(n.id);
     return { id: n.id, tick: number(n.tick, `音符 ${i + 1} tick`, 0, 1000000000, true), height: number(n.height, `音符 ${i + 1} height`, 0, 1) };
   });
-  return { version: 1, meta: { title: m.title, bpm: number(m.bpm, 'BPM', 1, 1000), offsetSeconds: number(m.offsetSeconds, 'offset', -86400, 86400),
+  return { version: 1, meta: { title: m.title, seed: m.seed == null ? 1 : number(m.seed, 'seed', 0, 4294967295, true), bpm: number(m.bpm, 'BPM', 1, 1000), offsetSeconds: number(m.offsetSeconds, 'offset', -86400, 86400),
     timeSignature: { numerator, denominator }, ppq: PPQ, music }, notes: normalizeNotes(notes) };
 }
 export function serializeChart(chart: Chart) {

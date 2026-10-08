@@ -1,0 +1,12 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {defaults,compile,actorAt,monsterAt,hash,hitConflicts,validateSettings} from '../src/engine.js';
+import {freshChart,parseChart,serializeChart} from '../../chart-editor/src/core.ts';
+const make=()=>({...freshChart(),notes:[{id:'a',tick:960,height:.2},{id:'b',tick:1056,height:.8},{id:'c',tick:2880,height:.5}]});
+const counts=[4,5,5,5,3];
+test('seed round trip through existing chart format and old charts',()=>{const c=make();c.meta.seed=4294967295;assert.equal(parseChart(serializeChart(c)).meta.seed,4294967295);delete c.meta.seed;assert.equal(parseChart(serializeChart(c)).meta.seed,1);assert.equal(hash(123,'a'),hash(123,'a'));assert.notEqual(hash(123,'a'),hash(123,'b'));});
+test('dense movement interrupts from exact current position without accelerating',()=>{const p={...defaults,bobAmplitude:0,moveLead:.25,moveDuration:.4};const e=compile(make(),p,counts,8);const at=actorAt(e,e[1].move-1e-8,p,counts,8);assert.ok(Math.abs(at.height-e[1].from)<1e-6);assert.ok(Math.abs(actorAt(e,e[1].move+.2,p,counts,8).height-(e[1].from+(.8-e[1].from)*.875))<1e-8);});
+test('dense attacks restart at frame zero without changing fps',()=>{const p={...defaults};const e=compile(make(),p,counts,8);assert.equal(actorAt(e,e[1].attack+.001,p,counts,8).frame,0);assert.equal(actorAt(e,e[1].attack+.13,p,counts,8).frame,1);});
+test('time seeking is deterministic and miss stays centered',()=>{const p={...defaults};const e=compile(make(),p,counts,8);const direct=actorAt(e,2.4,p,counts,8);for(let t=0;t<3;t+=.016)actorAt(e,t,p,counts,8);assert.deepEqual(actorAt(e,2.4,p,counts,8),direct);const miss=actorAt(e,2.4,{...p,mode:'miss'},counts,8);assert.equal(miss.slot,0);assert.ok(Math.abs(miss.height-.5)<=p.bobAmplitude);});
+test('hit line timing and miss left boundary use entire sprite radius',()=>{const e=compile(make(),defaults,counts,8)[0];assert.equal(monsterAt(e,e.time,defaults,120,100).visible,false);const miss={...defaults,mode:'miss'};assert.equal(monsterAt(e,e.time,miss,120,100).x,defaults.hitX*1920);assert.equal(monsterAt(e,e.time+.1,miss,120,100).visible,true);assert.equal(monsterAt(e,e.time+10,miss,120,100).visible,false);});
+test('same-time detection and invalid settings',()=>{const c=make();c.notes.push({...c.notes[0],id:'another'});assert.equal(hitConflicts(compile(c,defaults,counts,8)),true);assert.throws(()=>validateSettings({...defaults,moveDuration:0}));assert.throws(()=>validateSettings({...defaults,top:.9,bottom:.2}));});
